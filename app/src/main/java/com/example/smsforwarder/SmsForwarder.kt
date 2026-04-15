@@ -1,27 +1,28 @@
 package com.example.smsforwarder
 
 import android.content.Context
+import android.util.Log
 import com.google.gson.Gson
 import okhttp3.*
 import okhttp3.MediaType.Companion.toMediaType
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 
-// Класс для SMS данных
 data class SmsData(
     val sender: String,
     val message: String,
     val timestamp: Long
 )
 
-// Класс для отправки на сервер
 data class ForwardData(
-    val device: String = "NEWEDEMSMS",
+    val device: String,
     val phone: String,
     val text: String
 )
 
 object SmsForwarder {
+    private const val TAG = "SmsForwarder"
+
     private val client = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
         .writeTimeout(30, TimeUnit.SECONDS)
@@ -36,13 +37,9 @@ object SmsForwarder {
         smsData: SmsData,
         callback: (Boolean, String?) -> Unit
     ) {
-        // ДЕТАЛЬНОЕ ЛОГИРОВАНИЕ ВХОДНЫХ ДАННЫХ
-        android.util.Log.d("SmsForwarder", "========== НАЧАЛО ОТПРАВКИ ==========")
-        android.util.Log.d("SmsForwarder", "URL: $url")
-        android.util.Log.d("SmsForwarder", "Исходный отправитель: ${smsData.sender}")
-        android.util.Log.d("SmsForwarder", "Исходный текст: ${smsData.message}")
+        val prefs = context.getSharedPreferences("sms_forwarder", Context.MODE_PRIVATE)
+        val deviceName = prefs.getString("device_name", "SMSForwarder") ?: "SMSForwarder"
 
-        // Очищаем номер телефона
         val cleanPhone = smsData.sender
             .replace("+", "")
             .replace(" ", "")
@@ -51,19 +48,14 @@ object SmsForwarder {
             .replace("-", "")
             .trim()
 
-        android.util.Log.d("SmsForwarder", "Очищенный номер: $cleanPhone")
-        android.util.Log.d("SmsForwarder", "Текст сообщения: ${smsData.message}")
-
-        // Создаем данные для отправки
         val forwardData = ForwardData(
+            device = deviceName,
             phone = cleanPhone,
             text = smsData.message
         )
 
         val json = gson.toJson(forwardData)
-
-        android.util.Log.d("SmsForwarder", "ОТПРАВЛЯЕМЫЙ JSON: $json")
-        android.util.Log.d("SmsForwarder", "Длина JSON: ${json.length}")
+        Log.d(TAG, "Отправка на $url, phone=$cleanPhone, длина текста=${smsData.message.length}")
 
         val mediaType = "application/json; charset=utf-8".toMediaType()
         val requestBody = RequestBody.create(mediaType, json)
@@ -77,19 +69,19 @@ object SmsForwarder {
 
         client.newCall(request).enqueue(object : Callback {
             override fun onFailure(call: Call, e: IOException) {
-                android.util.Log.e("SmsForwarder", "ОШИБКА ОТПРАВКИ: ${e.message}")
+                Log.e(TAG, "Ошибка сети: ${e.message}")
                 callback(false, e.message)
             }
 
             override fun onResponse(call: Call, response: Response) {
-                val responseBody = response.body?.string() ?: "нет тела"
-                android.util.Log.d("SmsForwarder", "КОД ОТВЕТА: ${response.code}")
-                android.util.Log.d("SmsForwarder", "ТЕЛО ОТВЕТА: $responseBody")
+                response.use { resp ->
+                    val code = resp.code
+                    Log.d(TAG, "Ответ: HTTP $code")
 
-                val success = response.isSuccessful
-                val error = if (success) null else "HTTP ${response.code}"
-                callback(success, error)
-                response.close()
+                    val success = resp.isSuccessful
+                    val error = if (success) null else "HTTP $code"
+                    callback(success, error)
+                }
             }
         })
     }

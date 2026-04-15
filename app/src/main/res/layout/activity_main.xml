@@ -34,6 +34,14 @@
             android:layout_marginBottom="16dp" />
 
         <EditText
+            android:id="@+id/etDeviceName"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Имя устройства (device)"
+            android:inputType="text"
+            android:layout_marginBottom="16dp" />
+
+        <EditText
             android:id="@+id/etSenderFilter"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"

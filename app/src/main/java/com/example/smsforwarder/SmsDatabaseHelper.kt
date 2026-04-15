@@ -194,10 +194,10 @@ class SmsDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_N
 
     fun incrementRetryCount(queueId: Long) {
         val db = writableDatabase
-        val values = ContentValues().apply {
-            put(QUEUE_COLUMN_RETRY_COUNT, "retry_count + 1")
-        }
-        db.update(TABLE_QUEUE, values, "$QUEUE_COLUMN_ID = ?", arrayOf(queueId.toString()))
+        db.execSQL(
+            "UPDATE $TABLE_QUEUE SET $QUEUE_COLUMN_RETRY_COUNT = $QUEUE_COLUMN_RETRY_COUNT + 1 WHERE $QUEUE_COLUMN_ID = ?",
+            arrayOf(queueId)
+        )
     }
 
     fun getQueueCount(): Int {
@@ -212,6 +212,12 @@ class SmsDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_N
     fun clearQueue() {
         val db = writableDatabase
         db.delete(TABLE_QUEUE, null, null)
+    }
+
+    fun deleteOldMessages(olderThanMs: Long) {
+        val db = writableDatabase
+        val cutoff = System.currentTimeMillis() - olderThanMs
+        db.delete(TABLE_SMS, "$COLUMN_TIMESTAMP < ? AND $COLUMN_IS_FORWARDED = 1", arrayOf(cutoff.toString()))
     }
 }
 
