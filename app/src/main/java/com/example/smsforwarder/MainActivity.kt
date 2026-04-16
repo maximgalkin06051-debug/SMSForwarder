@@ -22,6 +22,7 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var sharedPreferences: SharedPreferences
     private lateinit var etWebhookUrl: EditText
+    private lateinit var etDeviceName: EditText
     private lateinit var etSenderFilter: EditText
     private lateinit var switchEnabled: SwitchMaterial
     private lateinit var btnSave: Button
@@ -33,13 +34,7 @@ class MainActivity : AppCompatActivity() {
     private val queueReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             val queueSize = intent.getIntExtra("queue_size", 0)
-            if (queueSize > 0) {
-                tvQueueStatus.text = "📤 В очереди: $queueSize сообщений"
-                tvQueueStatus.setTextColor(0xFFFF9800.toInt())
-            } else {
-                tvQueueStatus.text = "✓ Очередь пуста"
-                tvQueueStatus.setTextColor(0xFF4CAF50.toInt())
-            }
+            updateQueueStatusText(queueSize)
         }
     }
 
@@ -50,6 +45,7 @@ class MainActivity : AppCompatActivity() {
         sharedPreferences = getSharedPreferences("sms_forwarder", MODE_PRIVATE)
 
         etWebhookUrl = findViewById(R.id.etWebhookUrl)
+        etDeviceName = findViewById(R.id.etDeviceName)
         etSenderFilter = findViewById(R.id.etSenderFilter)
         switchEnabled = findViewById(R.id.switchEnabled)
         btnSave = findViewById(R.id.btnSave)
@@ -64,8 +60,6 @@ class MainActivity : AppCompatActivity() {
         updateQueueStatus()
 
         val filter = IntentFilter("com.example.smsforwarder.QUEUE_STATUS")
-
-        // ===== ИСПРАВЛЕННЫЙ КОД =====
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             registerReceiver(queueReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
         } else {
@@ -77,6 +71,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun loadSettings() {
         etWebhookUrl.setText(sharedPreferences.getString("webhook_url", ""))
+        etDeviceName.setText(sharedPreferences.getString("device_name", "SMSForwarder"))
         etSenderFilter.setText(sharedPreferences.getString("sender_filter", ""))
         switchEnabled.isChecked = sharedPreferences.getBoolean("enabled", true)
         updateStatus()
@@ -87,37 +82,26 @@ class MainActivity : AppCompatActivity() {
         btnTest.setOnClickListener { testWebhook() }
         switchEnabled.setOnCheckedChangeListener { _, _ -> saveSettings() }
         btnViewSms.setOnClickListener {
-            val intent = Intent(this, SmsListActivity::class.java)
-            startActivity(intent)
+            startActivity(Intent(this, SmsListActivity::class.java))
         }
     }
 
     private fun saveSettings() {
         val url = etWebhookUrl.text.toString().trim()
-        val filter = etSenderFilter.text.toString().trim()
+        val deviceName = etDeviceName.text.toString().trim().ifEmpty { "SMSForwarder" }
+        val senderFilter = etSenderFilter.text.toString().trim()
         val enabled = switchEnabled.isChecked
 
         sharedPreferences.edit().apply {
             putString("webhook_url", url)
-            putString("sender_filter", filter)
+            putString("device_name", deviceName)
+            putString("sender_filter", senderFilter)
             putBoolean("enabled", enabled)
             apply()
         }
 
         Toast.makeText(this, "Сохранено", Toast.LENGTH_SHORT).show()
         updateStatus()
-
-        val intent = Intent(this, SmsForwardService::class.java)
-        if (enabled && url.isNotEmpty()) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                startForegroundService(intent)
-            } else {
-                startService(intent)
-            }
-        } else {
-            stopService(intent)
-        }
-
         startQueueService()
     }
 
@@ -162,28 +146,29 @@ class MainActivity : AppCompatActivity() {
     private fun updateStatus() {
         val enabled = sharedPreferences.getBoolean("enabled", false)
         val url = sharedPreferences.getString("webhook_url", "")
-        tvStatus.text = if (enabled && url?.isNotEmpty() == true) {
-            "✓ Активен\n$url"
-        } else if (!enabled) {
-            "✗ Отключен"
-        } else {
-            "⚠ URL не настроен"
+        tvStatus.text = when {
+            enabled && !url.isNullOrEmpty() -> "Активен\n$url"
+            !enabled -> "Отключен"
+            else -> "URL не настроен"
         }
     }
 
     private fun updateQueueStatus() {
         val dbHelper = SmsDatabaseHelper(this)
         try {
-            val queueSize = dbHelper.getQueueCount()
-            if (queueSize > 0) {
-                tvQueueStatus.text = "📤 В очереди: $queueSize сообщений"
-                tvQueueStatus.setTextColor(0xFFFF9800.toInt())
-            } else {
-                tvQueueStatus.text = "✓ Очередь пуста"
-                tvQueueStatus.setTextColor(0xFF4CAF50.toInt())
-            }
+            updateQueueStatusText(dbHelper.getQueueCount())
         } finally {
             dbHelper.close()
+        }
+    }
+
+    private fun updateQueueStatusText(queueSize: Int) {
+        if (queueSize > 0) {
+            tvQueueStatus.text = "В очереди: $queueSize сообщений"
+            tvQueueStatus.setTextColor(0xFFFF9800.toInt())
+        } else {
+            tvQueueStatus.text = "Очередь пуста"
+            tvQueueStatus.setTextColor(0xFF4CAF50.toInt())
         }
     }
 
@@ -214,12 +199,16 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        updateQueueStatus()
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         try {
             unregisterReceiver(queueReceiver)
-        } catch (e: Exception) {
-            // Receiver не был зарегистрирован
+        } catch (_: Exception) {
         }
     }
 }

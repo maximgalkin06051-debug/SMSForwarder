@@ -40,13 +40,6 @@
         </receiver>
 
         <service
-            android:name=".SmsForwardService"
-            android:enabled="true"
-            android:exported="false"
-            android:foregroundServiceType="dataSync" />
-
-        <!-- ИСПРАВЛЕННЫЙ сервис очереди -->
-        <service
             android:name=".QueueSenderService"
             android:enabled="true"
             android:exported="false"
